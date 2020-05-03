@@ -32,5 +32,7 @@
 	<string>Copyright © 2020 com.seanchas116. All rights reserved.</string>
 	<key>NSPrincipalClass</key>
 	<string></string>
+	<key>NSCameraUsageDescription</key>
+	<string>To display as your virtual camera</string>
 </dict>
 </plist>
