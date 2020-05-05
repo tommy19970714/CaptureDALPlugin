@@ -17,20 +17,29 @@ class Device: Object {
     let deviceUID = "SimpleDALPlugin Device"
     let modelUID = "SimpleDALPlugin Model"
     var excludeNonDALAccess: Bool = false
-    var deviceMaster: Int32 = -1
+    var deviceMaster: Int32 = 0
+    var elementCategoryName = "Virtual Camera"
+    var elementNumberName = "Virtual Camera"
+    var pluginID: CMIOObjectID = 0
 
     lazy var properties: [Int : Property] = [
         kCMIOObjectPropertyName: Property(name),
         kCMIOObjectPropertyManufacturer: Property(manufacturer),
+        kCMIOObjectPropertyElementCategoryName: Property(elementCategoryName),
+        kCMIOObjectPropertyElementNumberName:Property(elementNumberName),
+        kCMIODevicePropertyPlugIn: Property(pluginID),
+        
         kCMIODevicePropertyDeviceUID: Property(deviceUID),
         kCMIODevicePropertyModelUID: Property(modelUID),
         kCMIODevicePropertyTransportType: Property(UInt32(kIOAudioDeviceTransportTypeBuiltIn)),
         kCMIODevicePropertyDeviceIsAlive: Property(UInt32(1)),
+        kCMIODevicePropertyDeviceHasChanged: Property(UInt32(0)),
         kCMIODevicePropertyDeviceIsRunning: Property(UInt32(1)),
         kCMIODevicePropertyDeviceIsRunningSomewhere: Property(UInt32(1)),
         kCMIODevicePropertyDeviceCanBeDefaultDevice: Property(UInt32(1)),
         kCMIODevicePropertyCanProcessAVCCommand: Property(UInt32(0)),
         kCMIODevicePropertyCanProcessRS422Command: Property(UInt32(0)),
+        kCMIODevicePropertyLatency: Property(UInt32(0)),
         kCMIODevicePropertyHogMode: Property(Int32(-1)),
         kCMIODevicePropertyStreams: Property { [unowned self] in self.streamID },
         kCMIODevicePropertyExcludeNonDALAccess: Property(

@@ -48,6 +48,7 @@ private func InitializeWithObjectID(plugin: CMIOHardwarePlugInRef?, objectID: CM
         log("error: \(error)")
         return error
     }
+    device.pluginID = objectID
     addObject(object: device)
 
     let stream = Stream()
