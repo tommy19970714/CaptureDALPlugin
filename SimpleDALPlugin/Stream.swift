@@ -8,7 +8,8 @@
 
 import Foundation
 
-class Stream: Object {
+class Stream: Object, VideoComposerDelegate {
+    
     var objectID: CMIOObjectID = 0
     let name = "SimpleDALPlugin"
     let width = 1280
@@ -18,6 +19,7 @@ class Stream: Object {
     private var sequenceNumber: UInt64 = 0
     private var queueAlteredProc: CMIODeviceStreamQueueAlteredProc?
     private var queueAlteredRefCon: UnsafeMutableRawPointer?
+    private var videoComposer: VideoComposer?
 
     private lazy var formatDescription: CMVideoFormatDescription? = {
         var formatDescription: CMVideoFormatDescription?
@@ -87,11 +89,15 @@ class Stream: Object {
     ]
 
     func start() {
-        timer.resume()
+        videoComposer = VideoComposer()
+        videoComposer?.delegate = self
+        videoComposer?.startRunning()
+//        timer.resume()
     }
 
     func stop() {
-        timer.suspend()
+        videoComposer?.stopRunning()
+//        timer.suspend()
     }
 
     func copyBufferQueue(queueAlteredProc: CMIODeviceStreamQueueAlteredProc?, queueAlteredRefCon: UnsafeMutableRawPointer?) -> CMSimpleQueue? {
@@ -127,7 +133,7 @@ class Stream: Object {
             return
         }
 
-        guard let pixelBuffer = createPixelBuffer() else {
+        guard let pixelBuffer = videoComposer?.lastScreenImageBuffer else {
             log("pixelBuffer is nil")
             return
         }
@@ -162,6 +168,65 @@ class Stream: Object {
         error = CMIOSampleBufferCreateForImageBuffer(
             kCFAllocatorDefault,
             pixelBuffer,
+            formatDescription,
+            &timing,
+            sequenceNumber,
+            UInt32(kCMIOSampleBufferNoDiscontinuities),
+            &sampleBufferUnmanaged
+        )
+        guard error == noErr else {
+            log("CMIOSampleBufferCreateForImageBuffer Error: \(error)")
+            return
+        }
+
+        CMSimpleQueueEnqueue(queue, element: sampleBufferUnmanaged!.toOpaque())
+        queueAlteredProc?(objectID, sampleBufferUnmanaged!.toOpaque(), queueAlteredRefCon)
+
+        sequenceNumber += 1
+    }
+    
+    func videoComposer(_ composer: VideoComposer, didComposeImageBuffer imageBuffer: CVImageBuffer) {
+        NSLog("■ CMIOMS: videoComposer called in stream.")
+        guard let queue = queue else {
+            log("queue is nil")
+            return
+        }
+
+        guard CMSimpleQueueGetCount(queue) < CMSimpleQueueGetCapacity(queue) else {
+            log("queue is full")
+            return
+        }
+
+        let currentTimeNsec = mach_absolute_time()
+
+        var timing = CMSampleTimingInfo(
+            duration: CMTime(value: 1, timescale: CMTimeScale(frameRate)),
+            presentationTimeStamp: CMTime(value: CMTimeValue(currentTimeNsec), timescale: CMTimeScale(1000_000_000)),
+            decodeTimeStamp: .invalid
+        )
+
+        var error = noErr
+
+        error = CMIOStreamClockPostTimingEvent(timing.presentationTimeStamp, currentTimeNsec, true, clock)
+        guard error == noErr else {
+            log("CMSimpleQueueCreate Error: \(error)")
+            return
+        }
+
+        var formatDescription: CMFormatDescription?
+        error = CMVideoFormatDescriptionCreateForImageBuffer(
+            allocator: kCFAllocatorDefault,
+            imageBuffer: imageBuffer,
+            formatDescriptionOut: &formatDescription)
+        guard error == noErr else {
+            log("CMVideoFormatDescriptionCreateForImageBuffer Error: \(error)")
+            return
+        }
+
+        var sampleBufferUnmanaged: Unmanaged<CMSampleBuffer>? = nil
+        error = CMIOSampleBufferCreateForImageBuffer(
+            kCFAllocatorDefault,
+            imageBuffer,
             formatDescription,
             &timing,
             sequenceNumber,
