@@ -1,3 +1,11 @@
+# SimpleDALCameraPlugin
+This repogitory was forked from SimpleDALPlugin created by seanchas116.
+An another [repogitory](https://github.com/kishikawakatsumi/VirtualCameraComposer-Example) created by kishikawa suports for  camera and screen capture(AVCaptureDevice and AVCaptureScreenInput).
+I merged two repositories. This repository supports for camera and is written in all swift.
+
+
+The following is a readme of DALPlugin.
+
 # SimpleDALPlugin
 
 This is a simple CoreMediaIO DAL virtual camera plugin written in Swift.
