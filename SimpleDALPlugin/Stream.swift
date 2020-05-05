@@ -8,16 +8,19 @@
 
 import Foundation
 
-class Stream: Object {
+class Stream: Object, VideoComposerDelegate {
+    
     var objectID: CMIOObjectID = 0
     let name = "SimpleDALPlugin"
     let width = 1280
     let height = 720
     let frameRate = 30
 
+    private var currentTimeMsec: UInt64 = 0
     private var sequenceNumber: UInt64 = 0
     private var queueAlteredProc: CMIODeviceStreamQueueAlteredProc?
     private var queueAlteredRefCon: UnsafeMutableRawPointer?
+    private var videoComposer: VideoComposer?
 
     private lazy var formatDescription: CMVideoFormatDescription? = {
         var formatDescription: CMVideoFormatDescription?
@@ -64,16 +67,6 @@ class Stream: Object {
         return queue
     }()
 
-    private lazy var timer: DispatchSourceTimer = {
-        let interval = 1.0 / Double(frameRate)
-        let timer = DispatchSource.makeTimerSource()
-        timer.schedule(deadline: .now() + interval, repeating: interval)
-        timer.setEventHandler(handler: { [weak self] in
-            self?.enqueueBuffer()
-        })
-        return timer
-    }()
-
     lazy var properties: [Int : Property] = [
         kCMIOObjectPropertyName: Property(name),
         kCMIOStreamPropertyFormatDescription: Property(formatDescription!),
@@ -87,11 +80,14 @@ class Stream: Object {
     ]
 
     func start() {
-        timer.resume()
+        currentTimeMsec = 0
+        videoComposer = VideoComposer()
+        videoComposer?.delegate = self
+        videoComposer?.startRunning()
     }
 
     func stop() {
-        timer.suspend()
+        videoComposer?.stopRunning()
     }
 
     func copyBufferQueue(queueAlteredProc: CMIODeviceStreamQueueAlteredProc?, queueAlteredRefCon: UnsafeMutableRawPointer?) -> CMSimpleQueue? {
@@ -99,24 +95,9 @@ class Stream: Object {
         self.queueAlteredRefCon = queueAlteredRefCon
         return self.queue
     }
-
-    private func createPixelBuffer() -> CVPixelBuffer? {
-        let pixelBuffer = CVPixelBuffer.create(size: CGSize(width: width, height: height))
-        pixelBuffer?.modifyWithContext { [width, height] context in
-            let time = Double(mach_absolute_time()) / Double(1000_000_000)
-            let pos = CGFloat(time - floor(time))
-
-            context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
-            context.fill(CGRect(x: 0, y: 0, width: width, height: height))
-
-            context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
-
-            context.fill(CGRect(x: pos * CGFloat(width), y: 310, width: 100, height: 100))
-        }
-        return pixelBuffer
-    }
-
-    private func enqueueBuffer() {
+    
+    func videoComposer(_ composer: VideoComposer, didComposeImageBuffer imageBuffer: CVImageBuffer) {
+        NSLog("■ CMIOMS: videoComposer called in stream.")
         guard let queue = queue else {
             log("queue is nil")
             return
@@ -126,23 +107,20 @@ class Stream: Object {
             log("queue is full")
             return
         }
-
-        guard let pixelBuffer = createPixelBuffer() else {
-            log("pixelBuffer is nil")
-            return
-        }
-
-        let currentTimeNsec = mach_absolute_time()
+        
+        let duration = 1000 / UInt64(frameRate)
+        currentTimeMsec += duration
+        let timestamp = CMTime(value: CMTimeValue(currentTimeMsec), timescale: CMTimeScale(1000))
 
         var timing = CMSampleTimingInfo(
-            duration: CMTime(value: 1, timescale: CMTimeScale(frameRate)),
-            presentationTimeStamp: CMTime(value: CMTimeValue(currentTimeNsec), timescale: CMTimeScale(1000_000_000)),
-            decodeTimeStamp: .invalid
+            duration: CMTime(value: CMTimeValue(duration), timescale: CMTimeScale(1000)),
+            presentationTimeStamp: timestamp,
+            decodeTimeStamp: timestamp
         )
 
         var error = noErr
 
-        error = CMIOStreamClockPostTimingEvent(timing.presentationTimeStamp, currentTimeNsec, true, clock)
+        error = CMIOStreamClockPostTimingEvent(timestamp, mach_absolute_time(), true, clock)
         guard error == noErr else {
             log("CMSimpleQueueCreate Error: \(error)")
             return
@@ -151,7 +129,7 @@ class Stream: Object {
         var formatDescription: CMFormatDescription?
         error = CMVideoFormatDescriptionCreateForImageBuffer(
             allocator: kCFAllocatorDefault,
-            imageBuffer: pixelBuffer,
+            imageBuffer: imageBuffer,
             formatDescriptionOut: &formatDescription)
         guard error == noErr else {
             log("CMVideoFormatDescriptionCreateForImageBuffer Error: \(error)")
@@ -161,7 +139,7 @@ class Stream: Object {
         var sampleBufferUnmanaged: Unmanaged<CMSampleBuffer>? = nil
         error = CMIOSampleBufferCreateForImageBuffer(
             kCFAllocatorDefault,
-            pixelBuffer,
+            imageBuffer,
             formatDescription,
             &timing,
             sequenceNumber,
