@@ -16,6 +16,7 @@ class Stream: Object, VideoComposerDelegate {
     let height = 720
     let frameRate = 30
 
+    private var currentTimeMsec: UInt64 = 0
     private var sequenceNumber: UInt64 = 0
     private var queueAlteredProc: CMIODeviceStreamQueueAlteredProc?
     private var queueAlteredRefCon: UnsafeMutableRawPointer?
@@ -79,6 +80,7 @@ class Stream: Object, VideoComposerDelegate {
     ]
 
     func start() {
+        currentTimeMsec = 0
         videoComposer = VideoComposer()
         videoComposer?.delegate = self
         videoComposer?.startRunning()
@@ -105,18 +107,20 @@ class Stream: Object, VideoComposerDelegate {
             log("queue is full")
             return
         }
-
-        let currentTimeNsec = mach_absolute_time()
+        
+        let duration = 1000 / UInt64(frameRate)
+        currentTimeMsec += duration
+        let timestamp = CMTime(value: CMTimeValue(currentTimeMsec), timescale: CMTimeScale(1000))
 
         var timing = CMSampleTimingInfo(
-            duration: CMTime(value: 1, timescale: CMTimeScale(frameRate)),
-            presentationTimeStamp: CMTime(value: CMTimeValue(currentTimeNsec), timescale: CMTimeScale(1000_000_000)),
-            decodeTimeStamp: .invalid
+            duration: CMTime(value: CMTimeValue(duration), timescale: CMTimeScale(1000)),
+            presentationTimeStamp: timestamp,
+            decodeTimeStamp: timestamp
         )
 
         var error = noErr
 
-        error = CMIOStreamClockPostTimingEvent(timing.presentationTimeStamp, currentTimeNsec, true, clock)
+        error = CMIOStreamClockPostTimingEvent(timestamp, mach_absolute_time(), true, clock)
         guard error == noErr else {
             log("CMSimpleQueueCreate Error: \(error)")
             return
